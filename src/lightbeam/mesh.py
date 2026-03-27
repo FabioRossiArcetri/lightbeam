@@ -272,7 +272,7 @@ class RectMesh3D:
         self.xres,self.yres,self.zres = round(xw/ds)+1+2*PML, round(yw/ds)+1+2*PML, round(zw/dz)+1
 
         self.xa = np.linspace(-xw/2-PML*ds,xw/2+PML*ds,self.xres)
-        self.ya = np.linspace(-xw/2-PML*ds,xw/2+PML*ds,self.yres)
+        self.ya = np.linspace(-yw/2-PML*ds, yw/2+PML*ds, self.yres)
 
         self.xg,self.yg = np.meshgrid(self.xa,self.ya,indexing='ij')
 
