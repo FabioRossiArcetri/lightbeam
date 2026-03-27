@@ -1,5 +1,8 @@
-import numpy as np
-from numpy import logical_and as AND, logical_not as NOT
+import numpy as _np
+from numpy import s_
+from lightbeam.xp import xp, to_cpu
+AND = xp.logical_and
+NOT = xp.logical_not
 from bisect import bisect_left,bisect_right
 import lightbeam.geom as geom
 from typing import List
@@ -32,11 +35,11 @@ class OpticPrim:
     
     def _bbox(self,z):
         '''calculate the 2D bounding box of the primitive at given z. allows for faster IOR computation. Should be overwritten.'''
-        return (-np.inf,np.inf,-np.inf,np.inf)
+        return (-_np.inf,_np.inf,-_np.inf,_np.inf)
 
     def _contains(self,x,y,z):
         '''given coords, return whether or not those coords are inside the element. Should be overwritten.'''
-        return np.full_like(x,False)
+        return xp.zeros_like(x, dtype=bool)
 
     def bbox_idx(self,z):
         '''get index slice corresponding to the primitives bbox, given an xg,yg coord grid'''
@@ -44,11 +47,11 @@ class OpticPrim:
         xa,ya = m.xa,m.ya
 
         xmin,xmax,ymin,ymax = self._bbox(z)
-        imin = max(bisect_left(xa,xmin)-1,0)
-        imax = min(bisect_left(xa,xmax)+1,len(xa))
-        jmin = max(bisect_left(ya,ymin)-1,0)
-        jmax = min(bisect_left(ya,ymax)+1,len(ya))
-        return np.s_[imin:imax,jmin:jmax], np.s_[imin:imax+1,jmin:jmax+1]
+        imin = max(bisect_left(to_cpu(xa).tolist(),xmin)-1,0)
+        imax = min(bisect_left(to_cpu(xa).tolist(),xmax)+1,len(xa))
+        jmin = max(bisect_left(to_cpu(ya).tolist(),ymin)-1,0)
+        jmax = min(bisect_left(to_cpu(ya).tolist(),ymax)+1,len(ya))
+        return s_[imin:imax,jmin:jmax], s_[imin:imax+1,jmin:jmax+1]
     
     def set_sampling(self,xymesh:RectMesh2D):
         self.xymesh = xymesh
@@ -160,8 +163,8 @@ class scaled_cyl(OpticPrim):
         yhg = self.xymesh.yhg[bboxh]
 
         m = self.xymesh
-        rxg,ryg = np.meshgrid(m.rxa,m.rya,indexing='ij')
-        dxg,dyg = np.meshgrid(m.dxa,m.dya,indexing='ij')
+        rxg,ryg = xp.meshgrid(m.rxa,m.rya,indexing='ij')
+        dxg,dyg = xp.meshgrid(m.dxa,m.dya,indexing='ij')
 
         geom.AA_circle_nonu(out,xg,yg,xhg,yhg,center,self.r*scale,self.nb2*coeff,self.n2*coeff,bbox,rxg,ryg,dxg,dyg)
     
@@ -227,22 +230,22 @@ class lant3big(OpticSys):
     '''3 port lantern, infinite jacket'''
     def __init__(self,rcore,rclad,ncore,nclad,njack,offset0,z_ex,z_offset=0,scale_func=None,final_scale=1):
         core0 = scaled_cyl([0,offset0],rcore,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
-        core1 = scaled_cyl([-np.sqrt(3)/2*offset0,-offset0/2],rcore,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
-        core2 = scaled_cyl([np.sqrt(3)/2*offset0,-offset0/2],rcore,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core1 = scaled_cyl([-_np.sqrt(3)/2*offset0,-offset0/2],rcore,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core2 = scaled_cyl([_np.sqrt(3)/2*offset0,-offset0/2],rcore,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
         clad = scaled_cyl([0,0],rclad,z_ex,nclad,njack,z_offset,scale_func=scale_func,final_scale=final_scale)
         elmnts = [clad,core2,core1,core0]
         
         super().__init__(elmnts,njack)
 
-        self.init_core_locs = np.array([[0,offset0],[-np.sqrt(3)/2*offset0,-offset0/2],[np.sqrt(3)/2*offset0,-offset0/2]])
+        self.init_core_locs = _np.array([[0,offset0],[-_np.sqrt(3)/2*offset0,-offset0/2],[_np.sqrt(3)/2*offset0,-offset0/2]])
         self.final_core_locs = self.init_core_locs*final_scale
 
 class lant3_ms(OpticSys):
     '''3 port lantern, infinite jacket, one core is bigger than the rest to accept LP01 mode.'''
     def __init__(self,rcore1,rcore2,rclad,ncore,nclad,njack,offset0,z_ex,z_offset=0,scale_func=None,final_scale=1):
         core0 = scaled_cyl([0,offset0],rcore1,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
-        core1 = scaled_cyl([-np.sqrt(3)/2*offset0,-offset0/2],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
-        core2 = scaled_cyl([np.sqrt(3)/2*offset0,-offset0/2],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core1 = scaled_cyl([-_np.sqrt(3)/2*offset0,-offset0/2],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
+        core2 = scaled_cyl([_np.sqrt(3)/2*offset0,-offset0/2],rcore2,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
         clad = scaled_cyl([0,0],rclad,z_ex,nclad,njack,z_offset,scale_func=scale_func,final_scale=final_scale)
         elmnts = [clad,core2,core1,core0]
         super().__init__(elmnts,njack)
@@ -251,11 +254,11 @@ class lant6_saval(OpticSys):
     '''6 port lantern, mode-selective, based off sergio leon-saval's paper'''
     def __init__(self,rcore0,rcore1,rcore2,rcore3,rclad,ncore,nclad,njack,offset0,z_ex,z_offset=0,scale_func=None,final_scale=1):
         
-        t = 2*np.pi/5
+        t = 2*_np.pi/5
         core_locs = [[0,0]]
         for i in range(5):
-            core_locs.append([offset0*np.cos(i*t),offset0*np.sin(i*t)])
-        self.core_locs = np.array(core_locs)
+            core_locs.append([offset0*_np.cos(i*t),offset0*_np.sin(i*t)])
+        self.core_locs = _np.array(core_locs)
         core0 = scaled_cyl(core_locs[0],rcore0,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
         core1 = scaled_cyl(core_locs[1],rcore1,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
         core2 = scaled_cyl(core_locs[2],rcore1,z_ex,ncore,nclad,z_offset,scale_func=scale_func,final_scale=final_scale)
@@ -288,21 +291,21 @@ class lant19(OpticSys):
         pos= [[0,0]]
 
         for i in range(6):
-            xpos = core_spacing*np.cos(i*np.pi/3)
-            ypos = core_spacing*np.sin(i*np.pi/3)
+            xpos = core_spacing*_np.cos(i*_np.pi/3)
+            ypos = core_spacing*_np.sin(i*_np.pi/3)
             pos.append([xpos,ypos])
         
-        startpos = np.array([2*core_spacing,0])
-        startang = 2*np.pi/3
+        startpos = _np.array([2*core_spacing,0])
+        startang = 2*_np.pi/3
         pos.append(startpos)
         for i in range(11):
             if i%2==0 and i!=0:
-                startang += np.pi/3
-            nextpos = startpos + np.array([core_spacing*np.cos(startang),core_spacing*np.sin(startang)])
+                startang += _np.pi/3
+            nextpos = startpos + _np.array([core_spacing*_np.cos(startang),core_spacing*_np.sin(startang)])
             pos.append(nextpos)
             startpos = nextpos
 
-        pos = np.array(pos)
+        pos = _np.array(pos)
         if not plot:
             return pos
         

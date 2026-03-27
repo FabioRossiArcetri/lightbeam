@@ -1,6 +1,7 @@
-import numpy as np
-from numpy import logical_not as NOT, logical_and as AND, logical_or as OR
-from numba import njit
+from lightbeam.xp import xp
+NOT = xp.logical_not
+AND = xp.logical_and
+OR  = xp.logical_or
 
 '''a collection of functions for antialiasing circles'''
 
@@ -25,13 +26,13 @@ def _arc(x, y0, y1, r):
     is traversed clockwise then the area is negative, otherwise it is
     positive.
     """
-    thetas = np.empty_like(x)
+    thetas = xp.empty_like(x)
     mask = (x==0)
-    thetas[mask] = np.pi/2*(np.sign(y1[mask])-np.sign(y0[mask]))
-    thetas[~mask] = np.arctan(y1[~mask]/x[~mask])-np.arctan(y0[~mask]/x[~mask])
+    thetas[mask] = xp.pi/2*(xp.sign(y1[mask])-xp.sign(y0[mask]))
+    thetas[~mask] = xp.arctan(y1[~mask]/x[~mask])-xp.arctan(y0[~mask]/x[~mask])
     return 0.5*r**2*thetas
-    #thetas = np.where(x==0, np.pi/2*(np.sign(y1)-np.sign(y0)),np.arctan(y1/x)-np.arctan(y0/x))
-    #return 0.5 * r**2 * (np.arctan2(y1,x) - np.arctan2(y0,x))
+    #thetas = np.where(x==0, xp.pi/2*(xp.sign(y1)-xp.sign(y0)),xp.arctan(y1/x)-xp.arctan(y0/x))
+    #return 0.5 * r**2 * (xp.arctan2(y1,x) - xp.arctan2(y0,x))
 
 def _chord(x, y0, y1):
     """
@@ -50,71 +51,71 @@ def _oneside(x, y0, y1, r):
     this path takes you clockwise the area will be negative.
     """
 
-    if np.all((x==0)): return x
+    if bool(xp.all(x == 0)): return x
 
     sx = x.shape
-    ans = np.zeros(sx, dtype=np.float64)
-    yh = np.zeros(sx, dtype=np.float64)
+    ans = xp.zeros(sx, dtype=xp.float64)
+    yh = xp.zeros(sx, dtype=xp.float64)
     to = (abs(x) >= r)
     ti = (abs(x) < r)
-    if np.any(to):
+    if bool(xp.any(to)):
         ans[to] = _arc(x[to], y0[to], y1[to], r)
-    if not np.any(ti):
+    if not bool(xp.any(ti)):
         return ans
 
-    yh[ti] = np.sqrt(r**2 - x[ti]**2)
+    yh[ti] = xp.sqrt(r**2 - x[ti]**2)
 
     i = ((y0 <= -yh) & ti)
-    if np.any(i):
+    if bool(xp.any(i)):
 
         j = ((y1 <= -yh) & i)
-        if np.any(j):
+        if bool(xp.any(j)):
             ans[j] = _arc(x[j], y0[j], y1[j], r)
 
         j = ((y1 > -yh) & (y1 <= yh) & i)
-        if np.any(j):
+        if bool(xp.any(j)):
             ans[j] = _arc(x[j], y0[j], -yh[j], r) + \
                      _chord(x[j], -yh[j], y1[j])
 
         j = ((y1 > yh) & i)
-        if np.any(j):
+        if bool(xp.any(j)):
             ans[j] = _arc(x[j], y0[j], -yh[j], r) + \
                      _chord(x[j], -yh[j], yh[j]) + \
                      _arc(x[j], yh[j], y1[j], r)
 
     i = ((y0 > -yh) & (y0 < yh) & ti)
-    if np.any(i):
+    if bool(xp.any(i)):
 
         j = ((y1 <= -yh) & i)
-        if np.any(j):
+        if bool(xp.any(j)):
             ans[j] = _chord(x[j], y0[j], -yh[j]) + \
                      _arc(x[j], -yh[j], y1[j], r)
 
         j = ((y1 > -yh) & (y1 <= yh) & i)
-        if np.any(j):
+        if bool(xp.any(j)):
             ans[j] = _chord(x[j], y0[j], y1[j])
 
         j = ((y1 > yh) & i)
-        if np.any(j):
+        if bool(xp.any(j)):
             ans[j] = _chord(x[j], y0[j], yh[j]) + \
                      _arc(x[j], yh[j], y1[j], r)
         
     i = ((y0 >= yh) & ti)
-    if np.any(i):
+    if bool(xp.any(i)):
 
         j = ((y1 <= -yh) & i)
-        if np.any(j):
+        if bool(xp.any(j)):
             ans[j] = _arc(x[j], y0[j], yh[j], r) + \
                      _chord(x[j], yh[j], -yh[j]) + \
                      _arc(x[j], -yh[j], y1[j], r)
 
         j = ((y1 > -yh) & (y1 <= yh) & i)
-        if np.any(j):
+        if bool(xp.any(j)):
             ans[j] = _arc(x[j], y0[j], yh[j], r) + \
                      _chord(x[j], yh[j], y1[j])
 
         j = ((y1 > yh) & i)
-        if np.any(j):
+        if bool(xp.any(j)):
             ans[j] = _arc(x[j], y0[j], y1[j], r)
         
     return ans
@@ -175,7 +176,7 @@ def pixwt(xc, yc, r, x, y):
     return _intarea(xc, yc, r, x-0.5, x+0.5, y-0.5, y+0.5)
 
 def get_masks(rsqh,R2):
-    maskh = np.full(rsqh.shape,False)
+    maskh = xp.zeros(rsqh.shape, dtype=bool)
     maskh[rsqh<=R2] = True
 
     mask_in = AND(maskh[1:,1:], AND(maskh[1:,:-1], AND(maskh[:-1,1:],maskh[:-1,:-1]))) 

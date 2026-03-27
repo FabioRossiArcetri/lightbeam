@@ -1,11 +1,7 @@
 
-import numpy as np
-from numpy import exp,dot,full,cos,sin,real,imag,power,pi,log,sqrt,roll,linspace,arange,transpose,pad,complex128 as c128, float32 as f32, float64 as f64
-from numba import njit,jit,complex128 as nbc128, void
-import os
-os.environ['NUMEXPR_MAX_THREADS'] = '16'
-os.environ['NUMEXPR_NUM_THREADS'] = '8'
-import numexpr as ne
+import numpy as _np
+from numpy import pi, s_
+from lightbeam.xp import xp, to_cpu, to_device
 from lightbeam.mesh import RectMesh3D,RectMesh2D
 import lightbeam.optics as optics
 from lightbeam.misc import timeit, overlap, normalize,printProgressBar, overlap_nonu, norm_nonu
@@ -22,28 +18,30 @@ from lightbeam.misc import timeit, overlap, normalize,printProgressBar, overlap_
 ## readability
 
 def genc(shape):
-    return np.empty(shape,dtype=c128,order='F')
+    return xp.empty(shape,dtype=xp.complex128,order='F')
 
 def genf(shape):
-    return np.empty(shape,dtype=c128,order='F')
+    return xp.empty(shape,dtype=xp.complex128,order='F')
 
-@njit(void(nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:],nbc128[:,:]))
-def tri_solve_vec(a,b,c,r,g,u):
-    '''Apply Thomas' method for simultaneously solving a set of tridagonal systems. a, b, c, and r are matrices
-    (N rows) where each column corresponds a separate system'''
-
+def tri_solve_vec(a, b, c, r, g, u):
+    """
+    Vectorised Thomas algorithm (pure xp — works on NumPy CPU and CuPy GPU).
+    Solves M independent tridiagonal systems simultaneously.
+    a, b, c : (N, M) complex – sub-, main-, super-diagonal
+    r       : (N, M) complex – right-hand side
+    g       : (N, M) complex – scratch array (pre-allocated, passed in)
+    u       : (N, M) complex – solution (written in-place)
+    """
     N = a.shape[0]
-    beta = b[0]
-    u[0] = r[0]/beta
-    
-    for j in range(1,N):
-        g[j] = c[j-1]/beta
-        beta = b[j] - a[j]*g[j]
-        u[j] = (r[j] - a[j]*u[j-1])/beta
-
-    for j in range(N-1):
-        k = N-2-j
-        u[k] = u[k] - g[k+1]*u[k+1]
+    beta = b[0].copy()
+    u[0] = r[0] / beta
+    for j in range(1, N):
+        g[j] = c[j-1] / beta
+        beta = b[j] - a[j] * g[j]
+        u[j] = (r[j] - a[j] * u[j-1]) / beta
+    for j in range(N - 1):
+        k = N - 2 - j
+        u[k] -= g[k+1] * u[k+1]
 
 class Prop3D:
     '''beam propagator. employs finite-differences beam propagation with PML as the boundary condition. works on an adaptive mesh'''
@@ -82,7 +80,7 @@ class Prop3D:
         dy02 = _mesh.xy.dy0**2
 
         K = k02*(nb2-n02)
-        n02 = power(n0,2)
+        n02 = xp.power(n0,2)
 
         ## coeff matrices of tridiagonal system, updated periodically
 
@@ -120,8 +118,8 @@ class Prop3D:
         
         self.half_dz = _mesh.dz/2.
 
-        self.power = np.empty((_mesh.zres,))
-        self.totalpower = np.empty((_mesh.zres,))
+        self.power = xp.empty((_mesh.zres,))
+        self.totalpower = xp.empty((_mesh.zres,))
 
     def allocate_mats(self):
         sx,sy = self._mesh.xy.xg.shape,self._mesh.xy.yg.T.shape
@@ -134,9 +132,9 @@ class Prop3D:
 
         fill = self.nb2*self.k02
 
-        IORsq__ = np.full(sx,fill,dtype=f64)
-        _IORsq_ = np.full(sx,fill,dtype=f64)
-        __IORsq = np.full(sx,fill,dtype=f64)
+        IORsq__ = xp.full(sx,fill,dtype=xp.float64)
+        _IORsq_ = xp.full(sx,fill,dtype=xp.float64)
+        __IORsq = xp.full(sx,fill,dtype=xp.float64)
 
         return _trimatsx,rmatx,gx,_trimatsy,rmaty,gy,IORsq__,_IORsq_,__IORsq
 
@@ -190,10 +188,10 @@ class Prop3D:
         ix = xy.cvert_ix
         if which=='x':
             r = xy.rxa[ix]
-            self.xgrid_cor_imask = np.where(r[1:-1]!=1)[0]
+            self.xgrid_cor_imask = xp.where(r[1:-1]!=1)[0]
         else:
             r = xy.rya[ix]
-            self.ygrid_cor_imask = np.where(r[1:-1]!=1)[0]
+            self.ygrid_cor_imask = xp.where(r[1:-1]!=1)[0]
         r2 = r*r
 
         R1 = (r2 + r -1)/(6*r*(r+1))
@@ -220,24 +218,20 @@ class Prop3D:
         s = self.sig    
         nu0 = -self.k02*self.n02
 
-        eval1 = "s*r3 - 1/(r+1)/(d*d) - 0.25*r3*n"
-        eval2 = "s*r2 + 1/r/(d*d) - 0.25*r2*n"
-        eval3 = "s*r1 - 1/r/(r+1)/(d*d) - 0.25*r1*n"
-
         if which == 'x':
             R1,R2,R3 = self.xgrid_cor_facs
             r = self._mesh.xy.rxa[ix]
             dla = self._mesh.xy.dxa[ix]
-            self._a0x = ne.evaluate(eval1,local_dict={"s":s,"r3":R3[1:,None],"r":r[1:,None],"d":dla[1:,None],"n":nu0})
-            self._b0x = ne.evaluate(eval2,local_dict={"s":s,"r2":R2[:,None],"r":r[:,None],"d":dla[:,None],"n":nu0})
-            self._c0x = ne.evaluate(eval3,local_dict={"s":s,"r1":R1[:-1,None],"r":r[:-1,None],"d":dla[:-1,None],"n":nu0})
+            self._a0x = s*R3[1:,None] - 1/(r[1:,None]+1)/(dla[1:,None]*dla[1:,None]) - 0.25*R3[1:,None]*nu0
+            self._b0x = s*R2[:,None] + 1/r[:,None]/(dla[:,None]*dla[:,None]) - 0.25*R2[:,None]*nu0
+            self._c0x = s*R1[:-1,None] - 1/r[:-1,None]/(r[:-1,None]+1)/(dla[:-1,None]*dla[:-1,None]) - 0.25*R1[:-1,None]*nu0
         else:
             R1,R2,R3 = self.ygrid_cor_facs
             r = self._mesh.xy.rya[ix]
             dla = self._mesh.xy.dya[ix]
-            self._a0y = ne.evaluate(eval1,local_dict={"s":s,"r3":R3[1:,None],"r":r[1:,None],"d":dla[1:,None],"n":nu0})
-            self._b0y = ne.evaluate(eval2,local_dict={"s":s,"r2":R2[:,None],"r":r[:,None],"d":dla[:,None],"n":nu0})
-            self._c0y = ne.evaluate(eval3,local_dict={"s":s,"r1":R1[:-1,None],"r":r[:-1,None],"d":dla[:-1,None],"n":nu0})
+            self._a0y = s*R3[1:,None] - 1/(r[1:,None]+1)/(dla[1:,None]*dla[1:,None]) - 0.25*R3[1:,None]*nu0
+            self._b0y = s*R2[:,None] + 1/r[:,None]/(dla[:,None]*dla[:,None]) - 0.25*R2[:,None]*nu0
+            self._c0y = s*R1[:-1,None] - 1/r[:-1,None]/(r[:-1,None]+1)/(dla[:-1,None]*dla[:-1,None]) - 0.25*R1[:-1,None]*nu0
 
     def _trimats(self,out,IORsq,which='x'):
         ''' calculate the tridiagonal matrices in the computational zone '''
@@ -261,13 +255,9 @@ class Prop3D:
 
         s = self.sig
 
-        eval1 = "a - 0.25*r3*n"
-        eval2 = "b - 0.25*r2*n"
-        eval3 = "c - 0.25*r1*n"
-        
-        ne.evaluate(eval1,local_dict={"a":a,"r3":R3[1:,None],"n":_IORsq[:-1]},out=_a[ix][1:])
-        ne.evaluate(eval2,local_dict={"b":b,"r2":R2[:,None],"n":_IORsq},out=_b[ix])
-        ne.evaluate(eval3,local_dict={"c":c,"r1":R1[:-1,None],"n":_IORsq[1:]},out=_c[ix][:-1])
+        _a[ix][1:] = a - 0.25*R3[1:,None]*_IORsq[:-1]
+        _b[ix]     = b - 0.25*R2[:,None]*_IORsq
+        _c[ix][:-1]= c - 0.25*R1[:-1,None]*_IORsq[1:]
 
         _a[ix][0] = s*R3[0] - 1. / ((r[0]+1) * dla[0]*dla[0]) - 0.25*R3[0]*(_IORsq[0]-self.n02*self.k02)
         _c[ix][-1] = s*R1[-1] - 1/r[-1]/(r[-1]+1)/(dla[-1]*dla[-1]) - 0.25*R1[-1]*(_IORsq[-1]-self.n02*self.k02)
@@ -281,7 +271,7 @@ class Prop3D:
 
         pix = self._mesh.xy.pvert_ix
 
-        temp = np.empty_like(_rmat[pix])
+        temp = xp.empty_like(_rmat[pix])
 
         temp[1:-1] = apml[1:-1,None]*u[pix-1][1:-1] + bpml[1:-1,None]*u[pix][1:-1] + cpml[1:-1,None]*u[pix+1][1:-1]
 
@@ -307,12 +297,9 @@ class Prop3D:
             a,b,c = self.a0y_,self.b0y_,self.c0y_
 
         N = self.n02*self.k02
-        m = np.s_[1:-1,None]
+        m = s_[1:-1,None]
 
-        _dict = _dict = {"a":a,"b":b,"c":c,"u1":u[ix][:-2],"u2":u[ix][1:-1],"u3":u[ix][2:],"n1":_IORsq[:-2],"n2":_IORsq[1:-1],"n3":_IORsq[2:],"r3":R3[m],"r2":R2[m],"r1":R1[m] }
-        _eval = "(a+0.25*r3*n1)*u1 + (b+0.25*r2*n2)*u2 + (c+0.25*r1*n3)*u3"
-
-        ne.evaluate(_eval,local_dict=_dict,out=_rmat[ix][1:-1])
+        _rmat[ix][1:-1] = (a + 0.25*R3[m]*_IORsq[:-2])*u[ix][:-2] + (b + 0.25*R2[m]*_IORsq[1:-1])*u[ix][1:-1] + (c + 0.25*R1[m]*_IORsq[2:])*u[ix][2:]
 
         _rmat[ix][0] = (s*R2[0] - 1/(r[0]*dla[0]**2 ) + 0.25*R2[0]*(_IORsq[0]-N))*u[0] + (s*R1[0] + 1/r[0]/(r[0]+1)/dla[0]**2 + 0.25*R1[0] * (_IORsq[1]-N) )*u[1]
         _rmat[ix][-1] =  (s*R3[-1] + 1. / ((r[-1]+1) * dla[-1]**2) + 0.25*R3[-1]*(_IORsq[-2]-N))*u[-2] + (s*R2[-1] - 1/(r[-1]*dla[-1]**2) + 0.25*R2[-1]*(_IORsq[-1]-N))*u[-1]
@@ -321,30 +308,24 @@ class Prop3D:
         ix = self._mesh.xy.cvert_ix
         s = self.sig
         n0 = -self.k02 * self.n02
-        m = np.s_[1:-1,None]
-
-        eval1="(s*r3+1/(r+1)/(d*d)+0.25*r3*n)"
-        eval2="(s*r2-1/r/(d*d)+0.25*r2*n)"
-        eval3="(s*r1+1/r/(r+1)/(d*d) + 0.25*r1*n)"
+        m = s_[1:-1,None]
 
         if which == 'x':
             R1,R2,R3 = self.xgrid_cor_facs
             r = self._mesh.xy.rxa[ix]
             dla = self._mesh.xy.dxa[ix]
 
-            _dict = {"s":s,"r3":R3[m],"r":r[m],"d":dla[m],"n":n0,"r2":R2[m],"r1":R1[m]}
-            self.a0x_ = ne.evaluate(eval1,local_dict=_dict)
-            self.b0x_ = ne.evaluate(eval2,local_dict=_dict)
-            self.c0x_ = ne.evaluate(eval3,local_dict=_dict)
+            self.a0x_ = s*R3[m] + 1/(r[m]+1)/(dla[m]*dla[m]) + 0.25*R3[m]*n0
+            self.b0x_ = s*R2[m] - 1/r[m]/(dla[m]*dla[m]) + 0.25*R2[m]*n0
+            self.c0x_ = s*R1[m] + 1/r[m]/(r[m]+1)/(dla[m]*dla[m]) + 0.25*R1[m]*n0
         else:
             R1,R2,R3 = self.ygrid_cor_facs
             r = self._mesh.xy.rya[ix]
             dla = self._mesh.xy.dya[ix]
 
-            _dict = {"s":s,"r3":R3[m],"r":r[m],"d":dla[m],"n":n0,"r2":R2[m],"r1":R1[m]}
-            self.a0y_ = ne.evaluate(eval1,local_dict=_dict)
-            self.b0y_ = ne.evaluate(eval2,local_dict=_dict)
-            self.c0y_ = ne.evaluate(eval3,local_dict=_dict)
+            self.a0y_ = s*R3[m] + 1/(r[m]+1)/(dla[m]*dla[m]) + 0.25*R3[m]*n0
+            self.b0y_ = s*R2[m] - 1/r[m]/(dla[m]*dla[m]) + 0.25*R2[m]*n0
+            self.c0y_ = s*R1[m] + 1/r[m]/(r[m]+1)/(dla[m]*dla[m]) + 0.25*R1[m]*n0
 
     def _pmlcorrect(self,_trimats,which='x'):
         ix = self._mesh.xy.pvert_ix
@@ -376,18 +357,18 @@ class Prop3D:
                 za_keep = _mesh.za[zslice]
                 shape = (len(za_keep),*_mesh.xg[xyslice].shape)
 
-            self.field = np.zeros(shape,dtype=c128)
+            self.field = xp.zeros(shape,dtype=xp.complex128)
 
         #pull xy mesh
         xy = _mesh.xy
         dx,dy = xy.dx0,xy.dy0
 
         if fplanewidth == 0:
-            xa_in = np.linspace(-_mesh.xw/2,_mesh.xw/2,xy.shape0_comp[0])
-            ya_in = np.linspace(-_mesh.yw/2,_mesh.yw/2,xy.shape0_comp[1])
+            xa_in = xp.linspace(-_mesh.xw/2,_mesh.xw/2,xy.shape0_comp[0])
+            ya_in = xp.linspace(-_mesh.yw/2,_mesh.yw/2,xy.shape0_comp[1])
         else:
-            xa_in = np.linspace(-fplanewidth/2,fplanewidth/2,xy.shape0_comp[0])
-            ya_in = np.linspace(-fplanewidth/2,fplanewidth/2,xy.shape0_comp[1])
+            xa_in = xp.linspace(-fplanewidth/2,fplanewidth/2,xy.shape0_comp[0])
+            ya_in = xp.linspace(-fplanewidth/2,fplanewidth/2,xy.shape0_comp[1])
 
         dx0 = xa_in[1]-xa_in[0]
         dy0 = ya_in[1]-ya_in[0]
@@ -397,7 +378,7 @@ class Prop3D:
         # without being penalized by forcing the use of a low resolution
         # launch field
 
-        if type(_u) is np.ndarray:
+        if hasattr(_u, '__array__') or hasattr(_u, '__cuda_array_interface__'):
 
             _power = overlap(_u,_u)
             print('input power: ',_power)
@@ -411,7 +392,7 @@ class Prop3D:
             _power2 = overlap(u0,u0,dx*dy)
 
             #now we pad w/ zeros to extend it into the PML zone
-            u0 = np.pad(u0,((PML,PML),(PML,PML)))
+            u0 = xp.pad(u0,((PML,PML),(PML,PML)))
 
             #initial mesh refinement
             xy.refine_base(u0,ref_val)
@@ -420,7 +401,7 @@ class Prop3D:
 
             #now resample the field onto the smaller *non-uniform* xy mesh
             u = xy.resample_complex(_u,xa_in,ya_in,xy.xa[PML:-PML],xy.ya[PML:-PML])
-            u = np.pad(u,((PML,PML),(PML,PML)))
+            u = xp.pad(u,((PML,PML),(PML,PML)))
 
             #do another norm to correct for the slight power change you get when resampling. I measure 0.1% change for psflo. should check again
             norm_nonu(u,weights,_power2)
@@ -480,7 +461,7 @@ class Prop3D:
             if i%20 == 0: 
                 printProgressBar(i,total_iters-1)
             u0 = xy.get_base_field(u)
-            u0c = np.conj(u0)
+            u0c = xp.conj(u0)
             weights = xy.get_weights()
             
             ## Total power monitor ##
@@ -490,7 +471,7 @@ class Prop3D:
             ## Other monitors ##
             if monitor_func is not None:
                 monitor_field = norm_nonu(monitor_func(xy.xg,xy.yg),weights)
-                self.power[i] = power(overlap_nonu(u,monitor_field,weights),2)
+                self.power[i] = xp.power(overlap_nonu(u,monitor_field,weights),2)
 
             _z_ = z__ + _mesh.half_dz
             __z = z__ + _mesh.dz
@@ -507,7 +488,7 @@ class Prop3D:
                 if dynamic_n0:
                     #update the effective index
                     base = xy.get_base_field(IORsq__)
-                    self.n02 = xy.dx0*xy.dy0*np.real(np.sum(u0c*u0*base))/self.k02
+                    self.n02 = xy.dx0*xy.dy0*float(xp.real(xp.sum(u0c*u0*base)))/self.k02
 
                 oldxm,oldxM = xy.xm,xy.xM
                 oldym,oldyM = xy.ym,xy.yM
@@ -530,12 +511,12 @@ class Prop3D:
                     xpad = int((xy.shape0[0]-u0.shape[0])/2)
                     ypad = int((xy.shape0[1]-u0.shape[1])/2)
 
-                    u = np.pad(u,((xpad,xpad),(ypad,ypad)))
-                    u0 = np.pad(u0,((xpad,xpad),(ypad,ypad)))
+                    u = xp.pad(u,((xpad,xpad),(ypad,ypad)))
+                    u0 = xp.pad(u0,((xpad,xpad),(ypad,ypad)))
 
                     #pad coord arrays to do interpolation
-                    xy.xa_last = np.hstack( ( np.linspace(xy.xm,oldxm-dx,xpad) , xy.xa_last , np.linspace(oldxM + dx, xy.xM,xpad) ) )
-                    xy.ya_last = np.hstack( ( np.linspace(xy.ym,oldym-dy,ypad) , xy.ya_last , np.linspace(oldyM + dy, xy.yM,ypad) ) )
+                    xy.xa_last = xp.hstack( ( xp.linspace(xy.xm,oldxm-dx,xpad) , xy.xa_last , xp.linspace(oldxM + dx, xy.xM,xpad) ) )
+                    xy.ya_last = xp.hstack( ( xp.linspace(xy.ym,oldym-dy,ypad) , xy.ya_last , xp.linspace(oldyM + dy, xy.yM,ypad) ) )
                    
                 #subdivide into nonuniform grid
                 xy.refine_base(u0,ref_val)
@@ -586,10 +567,10 @@ class Prop3D:
             if (i+2)%remesh_every != 0:
                 IORsq__[:,:] = __IORsq
   
-        print("final total power",self.totalpower[-1])
+        print("final total power",float(self.totalpower[-1]))
         
         if writeto:
-            np.save(writeto,self.field)
+            _np.save(writeto,to_cpu(self.field))
         return u,u0
 
     @timeit 
@@ -599,20 +580,20 @@ class Prop3D:
 
         if not (xyslice is None and zslice is None):
             za_keep = _mesh.za[zslice]
-            if type(za_keep) == np.ndarray:
+            if hasattr(za_keep, '__len__'):
                 minz, maxz = za_keep[0],za_keep[-1]
                 shape = (len(za_keep),*_mesh.xg[xyslice].shape)
             else:
                 raise Exception('uhh not implemented')
             
-            self.field = np.zeros(shape,dtype=c128)
+            self.field = xp.zeros(shape,dtype=xp.complex128)
 
         if fplanewidth == 0:
-            xa_in = np.linspace(-_mesh.xw/2,_mesh.xw/2,u.shape[0])
-            ya_in = np.linspace(-_mesh.yw/2,_mesh.yw/2,u.shape[1])
+            xa_in = xp.linspace(-_mesh.xw/2,_mesh.xw/2,u.shape[0])
+            ya_in = xp.linspace(-_mesh.yw/2,_mesh.yw/2,u.shape[1])
         else:
-            xa_in = np.linspace(-fplanewidth/2,fplanewidth/2,u.shape[0])
-            ya_in = np.linspace(-fplanewidth/2,fplanewidth/2,u.shape[1])
+            xa_in = xp.linspace(-fplanewidth/2,fplanewidth/2,u.shape[0])
+            ya_in = xp.linspace(-fplanewidth/2,fplanewidth/2,u.shape[1])
 
         dx0 = xa_in[1]-xa_in[0]
         dy0 = ya_in[1]-ya_in[0]
@@ -633,7 +614,7 @@ class Prop3D:
         u0 = xy.resample_complex(u,xa_in,ya_in,xy.xa[PML:-PML],xy.ya[PML:-PML])
 
         #now we pad w/ zeros to extend it into the PML zone
-        u0 = np.pad(u0,((PML,PML),(PML,PML)))
+        u0 = xp.pad(u0,((PML,PML),(PML,PML)))
 
         counter = 0
         total_iters = self._mesh.zres
@@ -675,7 +656,7 @@ class Prop3D:
             ## Other monitors ##
             if u1_func is not None:
                 lp = norm_nonu(u1_func(xy.xg,xy.yg),weights)
-                self.power[i] = power(overlap_nonu(u0,lp,weights),2)
+                self.power[i] = xp.power(overlap_nonu(u0,lp,weights),2)
 
             _z_ = z__ + _mesh.half_dz
             __z = z__ + _mesh.dz
@@ -706,8 +687,8 @@ class Prop3D:
             z__ = __z
             IORsq__[:,:] = __IORsq
   
-        print("final total power",self.totalpower[-1])
+        print("final total power",float(self.totalpower[-1]))
         
         if writeto:
-            np.save(writeto,self.field)
+            _np.save(writeto,to_cpu(self.field))
         return u0

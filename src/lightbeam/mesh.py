@@ -1,11 +1,11 @@
-import numpy as np
-from numpy import s_,arange,sqrt,power,complex64 as c64
+import numpy as _np
+from numpy import s_
 from scipy.interpolate import RectBivariateSpline
 import matplotlib.pyplot as plt
 from itertools import chain
 from bisect import bisect_left
-import numexpr as ne
 import math
+from lightbeam.xp import xp, to_cpu
 
 ## to do
 
@@ -30,11 +30,11 @@ class RectMesh2D:
         self.xg = None
         self.yg = None
 
-        self.ccel_ix = np.s_[Nbc+2:-Nbc-2]
+        self.ccel_ix = s_[Nbc+2:-Nbc-2]
 
         ###??? idk why these have to overlap but the pml doesn't work any other way
-        self.cvert_ix = np.s_[Nbc:-Nbc]
-        self.pvert_ix = np.hstack((arange(Nbc+1),arange(-Nbc-1,0)))
+        self.cvert_ix = s_[Nbc:-Nbc]
+        self.pvert_ix = xp.hstack((xp.arange(Nbc+1),xp.arange(-Nbc-1,0)))
 
         self.reinit(xw,yw)
         self.update(self.rfacxa,self.rfacya)
@@ -59,23 +59,23 @@ class RectMesh2D:
         self.xM = xw/2+Nbc*dx
         self.yM = yw/2+Nbc*dy
 
-        self.xa0 = np.linspace(-xw/2-Nbc*dx,xw/2+Nbc*dx,xres)
-        self.ya0 = np.linspace(-yw/2-Nbc*dy,yw/2+Nbc*dy,yres)
+        self.xa0 = xp.linspace(-xw/2-Nbc*dx,xw/2+Nbc*dx,xres)
+        self.ya0 = xp.linspace(-yw/2-Nbc*dy,yw/2+Nbc*dy,yres)
 
-        self.xix_base = np.arange(xres)
-        self.yix_base = np.arange(yres)
+        self.xix_base = xp.arange(xres)
+        self.yix_base = xp.arange(yres)
 
-        self.dxa = np.full(xres,dx)
-        self.dya = np.full(yres,dy)
+        self.dxa = xp.full(xres,dx)
+        self.dya = xp.full(yres,dy)
 
-        self.xa = self.xa0 = np.linspace(-xw/2-Nbc*dx,xw/2+Nbc*dx,xres)
-        self.ya = self.ya0 = np.linspace(-yw/2-Nbc*dy,yw/2+Nbc*dy,yres)
+        self.xa = self.xa0 = xp.linspace(-xw/2-Nbc*dx,xw/2+Nbc*dx,xres)
+        self.ya = self.ya0 = xp.linspace(-yw/2-Nbc*dy,yw/2+Nbc*dy,yres)
 
         self.pvert_xa = self.xa0[self.pvert_ix]
         self.pvert_ya = self.ya0[self.pvert_ix]
 
-        self.rfacxa = self.rfacxa0 = np.full(xres-1,1)
-        self.rfacya = self.rfacya0 = np.full(yres-1,1)
+        self.rfacxa = self.rfacxa0 = xp.full(xres-1,1)
+        self.rfacya = self.rfacya0 = xp.full(yres-1,1)
 
     def snapto(self,xw,yw):
         xwr = 2*math.ceil(xw/2/self.dx0)
@@ -88,28 +88,28 @@ class RectMesh2D:
 
     def dxa2xa(self,dxa):
         N = len(dxa)
-        out = np.zeros(N+1)
-        np.cumsum(dxa,out=out[1:])
+        out = xp.zeros(N+1)
+        xp.cumsum(dxa,out=out[1:])
         return out + self.xm
 
     def update(self,rfacxa,rfacya):
         self.rfacxa = rfacxa
         self.rfacya = rfacya
 
-        xix_base = np.empty(len(rfacxa)+1,dtype=int)
-        yix_base = np.empty(len(rfacya)+1,dtype=int)
+        xix_base = xp.empty(len(rfacxa)+1,dtype=int)
+        yix_base = xp.empty(len(rfacya)+1,dtype=int)
 
         xix_base[0] = 0
         yix_base[0] = 0
 
-        xix_base[1:] = np.cumsum(rfacxa)
-        yix_base[1:] = np.cumsum(rfacya)
+        xix_base[1:] = xp.cumsum(rfacxa)
+        yix_base[1:] = xp.cumsum(rfacya)
 
         self.xix_base = xix_base[self.xix_base]
         self.yix_base = yix_base[self.yix_base]
 
-        new_dxa = np.repeat(self.dxa[1:]/rfacxa,rfacxa)
-        new_dya = np.repeat(self.dya[1:]/rfacya,rfacya)
+        new_dxa = xp.repeat(self.dxa[1:]/rfacxa,rfacxa)
+        new_dya = xp.repeat(self.dya[1:]/rfacya,rfacya)
 
         new_xa = self.dxa2xa(new_dxa)
         new_ya = self.dxa2xa(new_dya)
@@ -117,36 +117,36 @@ class RectMesh2D:
         self.xa = new_xa
         self.ya = new_ya
 
-        rxa = np.empty_like(self.xa,dtype=float)
+        rxa = xp.empty_like(self.xa,dtype=float)
         rxa[1:-1] = new_dxa[1:]/new_dxa[:-1]
         rxa[0] = 1
         rxa[-1] = 1
         self.rxa = rxa
 
-        rya = np.empty_like(self.ya,dtype=float)
+        rya = xp.empty_like(self.ya,dtype=float)
         rya[1:-1] = new_dya[1:]/new_dya[:-1]
         rya[0] = 1
         rya[-1] = 1
         self.rya = rya
 
-        self.dxa = np.empty_like(self.xa)
+        self.dxa = xp.empty_like(self.xa)
         self.dxa[1:] = new_dxa
         self.dxa[0] = self.dxa[1]
 
-        self.dya = np.empty_like(self.ya)
+        self.dya = xp.empty_like(self.ya)
         self.dya[1:] = new_dya
         self.dya[0] = self.dya[1]
 
         self.xres,self.yres = len(self.xa),len(self.ya)
 
-        self.xg,self.yg = np.meshgrid(new_xa,new_ya,indexing='ij')
+        self.xg,self.yg = xp.meshgrid(new_xa,new_ya,indexing='ij')
 
         #offset grids
-        xhg = np.empty(( self.xg.shape[0] + 1 , self.xg.shape[1] ))
-        yhg = np.empty(( self.yg.shape[0] , self.yg.shape[1] + 1 ))
+        xhg = xp.empty(( self.xg.shape[0] + 1 , self.xg.shape[1] ))
+        yhg = xp.empty(( self.yg.shape[0] , self.yg.shape[1] + 1 ))
 
-        ne.evaluate("(a+b)/2",local_dict={"a":self.xg[1:],"b":self.xg[:-1]},out=xhg[1:-1])
-        ne.evaluate("(a+b)/2",local_dict={"a":self.yg[:,1:],"b":self.yg[:,:-1]},out=yhg[:,1:-1])
+        xhg[1:-1] = (self.xg[1:] + self.xg[:-1]) * 0.5
+        yhg[:,1:-1] = (self.yg[:,1:] + self.yg[:,:-1]) * 0.5
 
         xhg[0] = self.xg[0] - self.dxa[0]*0.5
         xhg[-1] = self.xg[-1] + self.dxa[-1]*rxa[-1]*0.5
@@ -160,19 +160,19 @@ class RectMesh2D:
 
     def get_weights(self):
         xhg,yhg = self.xhg,self.yhg
-        weights = ne.evaluate("(a-b)*(c-d)",local_dict={"a":xhg[1:],"b":xhg[:-1],"c":yhg[:,1:],"d":yhg[:,:-1]})
+        weights = (xhg[1:] - xhg[:-1]) * (yhg[:,1:] - yhg[:,:-1])
         return weights
 
     def resample(self,u,xa=None,ya=None,newxa=None,newya=None):
         if xa is None or ya is None:
-            out = RectBivariateSpline(self.xa_last,self.ya_last,u)(self.xa,self.ya)
+            out = RectBivariateSpline(to_cpu(self.xa_last),to_cpu(self.ya_last),to_cpu(u))(to_cpu(self.xa),to_cpu(self.ya))
         else:
-            out = RectBivariateSpline(xa,ya,u)(newxa,newya)
-        return out
+            out = RectBivariateSpline(to_cpu(xa),to_cpu(ya),to_cpu(u))(to_cpu(newxa),to_cpu(newya))
+        return xp.asarray(out)
     
     def resample_complex(self,u,xa=None,ya=None,newxa=None,newya=None):
-        reals = np.real(u)
-        imags = np.imag(u)
+        reals = xp.real(u)
+        imags = xp.imag(u)
         reals = self.resample(reals,xa,ya,newxa,newya)
         imags = self.resample(imags,xa,ya,newxa,newya)
         return reals+1.j*imags
@@ -212,21 +212,21 @@ class RectMesh2D:
         ix = self.ccel_ix
 
         # x second derivative estimation
-        xdif2 = np.empty_like(u0,dtype=np.complex128)
+        xdif2 = xp.empty_like(u0,dtype=xp.complex128)
         xdif2[1:-1] = u0[2:]+u0[:-2] - 2*u0[1:-1]
         xdif2[0] = xdif2[-1] = 0
 
         # y second derivative estimation
-        ydif2 = np.empty_like(u0,dtype=np.complex128)
+        ydif2 = xp.empty_like(u0,dtype=xp.complex128)
         ydif2[:,1:-1] = u0[:,2:]+u0[:,:-2] - 2*u0[:,1:-1]
 
         ydif2[:,0] = ydif2[:,-1] = 0
 
         # field amps
-        umaxx = np.sqrt(np.max(np.abs(u0),axis=1) * np.max(np.abs(xdif2),axis=1))
+        umaxx = xp.sqrt(xp.max(xp.abs(u0),axis=1) * xp.max(xp.abs(xdif2),axis=1))
         umaxx = 0.5*(umaxx[1:]+umaxx[:-1])
 
-        umaxy = np.sqrt(np.max(np.abs(u0),axis=0) * np.max(np.abs(ydif2),axis=0))
+        umaxy = xp.sqrt(xp.max(xp.abs(u0),axis=0) * xp.max(xp.abs(ydif2),axis=0))
         umaxy = 0.5*(umaxy[1:]+umaxy[:-1])
 
         _rx = umaxx[ix]*self.dxa[1:][ix]/crit_val
@@ -243,8 +243,8 @@ class RectMesh2D:
 
         _rx,_ry = self._compute_refinement_factor(u0,crit_val)
 
-        rfacxa = np.full(u0.shape[0]-1,1,dtype=int)
-        rfacya = np.full(u0.shape[1]-1,1,dtype=int)
+        rfacxa = xp.full(u0.shape[0]-1,1,dtype=int)
+        rfacya = xp.full(u0.shape[1]-1,1,dtype=int)
 
         mask = (_rx>1)
         rfacxa[ix][mask] = 2
@@ -271,10 +271,10 @@ class RectMesh3D:
         self.ds,self.dz = ds,dz
         self.xres,self.yres,self.zres = round(xw/ds)+1+2*PML, round(yw/ds)+1+2*PML, round(zw/dz)+1
 
-        self.xa = np.linspace(-xw/2-PML*ds,xw/2+PML*ds,self.xres)
-        self.ya = np.linspace(-yw/2-PML*ds, yw/2+PML*ds, self.yres)
+        self.xa = xp.linspace(-xw/2-PML*ds,xw/2+PML*ds,self.xres)
+        self.ya = xp.linspace(-yw/2-PML*ds, yw/2+PML*ds, self.yres)
 
-        self.xg,self.yg = np.meshgrid(self.xa,self.ya,indexing='ij')
+        self.xg,self.yg = xp.meshgrid(self.xa,self.ya,indexing='ij')
 
         self.shape=(self.zres,self.xres,self.yres)
 
@@ -290,7 +290,7 @@ class RectMesh3D:
             
         self.xy = RectMesh2D(xy_xw,xy_yw,ds,ds,PML)
 
-        self.za = np.linspace(0,zw,self.zres)
+        self.za = xp.linspace(0,zw,self.zres)
 
         self.sigma_max = 5.+0.j #max (dimensionless) conductivity in PML layers
         self.PML = PML
@@ -302,17 +302,19 @@ class RectMesh3D:
     def get_loc(self ):
 
         xy = self.xy
-        ix0 = bisect_left(self.xa,xy.xm-TOL)
-        ix1 = bisect_left(self.xa,xy.xM-TOL)
-        ix2 = bisect_left(self.ya,xy.ym-TOL)
-        ix3 = bisect_left(self.ya,xy.yM-TOL)
+        xa_list = to_cpu(self.xa).tolist()
+        ya_list = to_cpu(self.ya).tolist()
+        ix0 = bisect_left(xa_list,xy.xm-TOL)
+        ix1 = bisect_left(xa_list,xy.xM-TOL)
+        ix2 = bisect_left(ya_list,xy.ym-TOL)
+        ix3 = bisect_left(ya_list,xy.yM-TOL)
         return ix0,ix1,ix2,ix3
 
     def sigmax(self,x):
         '''dimensionless, divided by e0 omega'''
-        return np.where(np.abs(x)>self.xy.xw/2.,power((np.abs(x) - self.xy.xw/2)/(self.PML*self.xy.dx0),2.)*self.sigma_max,0.+0.j)
+        return xp.where(xp.abs(x)>self.xy.xw/2.,xp.power((xp.abs(x) - self.xy.xw/2)/(self.PML*self.xy.dx0),2.)*self.sigma_max,0.+0.j)
     
     def sigmay(self,y):
         '''dimensionless, divided by e0 omega'''
-        return np.where(np.abs(y)>self.xy.yw/2.,power((np.abs(y) - self.xy.yw/2)/(self.PML*self.xy.dy0),2.)*self.sigma_max,0.+0.j)
+        return xp.where(xp.abs(y)>self.xy.yw/2.,xp.power((xp.abs(y) - self.xy.yw/2)/(self.PML*self.xy.dy0),2.)*self.sigma_max,0.+0.j)
 
