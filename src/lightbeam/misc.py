@@ -1,9 +1,10 @@
 ''' bunch of miscellaneous functions that I didn't know where to put'''
 
-import numpy as np
+import numpy as _np
 from bisect import bisect_left
 import time
 from scipy.interpolate import RectBivariateSpline
+from lightbeam.xp import xp, to_cpu
 
 def getslices(bounds,arr):
     '''given a range, get the idxs corresponding to that range in the sorted array arr '''
@@ -18,36 +19,37 @@ def getslices(bounds,arr):
 
 def resize2(image,newshape):
     '''another resampling function that uses scipy, not cv2'''
-    xpix = np.arange(image.shape[0])
-    ypix = np.arange(image.shape[1])
+    image_cpu = to_cpu(image)
+    xpix = _np.arange(image_cpu.shape[0])
+    ypix = _np.arange(image_cpu.shape[1])
 
-    xpix_new = np.linspace(xpix[0],xpix[-1],newshape[0])
-    ypix_new = np.linspace(ypix[0],ypix[-1],newshape[1])
+    xpix_new = _np.linspace(xpix[0],xpix[-1],newshape[0])
+    ypix_new = _np.linspace(ypix[0],ypix[-1],newshape[1])
 
-    return RectBivariateSpline(xpix,ypix,image)(xpix_new,ypix_new)
+    return RectBivariateSpline(xpix,ypix,image_cpu)(xpix_new,ypix_new)
 
 def overlap(u1,u2,weight=1,c=False):
     if not c:
-        return weight*np.abs(np.sum(np.conj(u1)*u2))
-    return weight * np.sum(np.conj(u1)*u2)
+        return weight*xp.abs(xp.sum(xp.conj(u1)*u2))
+    return weight * xp.sum(xp.conj(u1)*u2)
 
 def overlap_nonu(u1,u2,weights):
-    return np.abs(np.sum(weights*np.conj(u1)*u2))
+    return xp.abs(xp.sum(weights*xp.conj(u1)*u2))
 
 def overlap_nonu_trap(u1,u2,xa,ya,c=False):
-    integrand = np.conj(u1)*u2
-    integral = np.traps(np.trapz(integrand,ya,axis=-1),xa)
+    integrand = xp.conj(u1)*u2
+    integral = xp.trapz(xp.trapz(integrand,ya,axis=-1),xa)
     if c:
         return integral
-    return np.abs(integral)
+    return xp.abs(integral)
 
 def normalize(u0,weight=1,normval = 1):
-    norm = np.sqrt(normval/overlap(u0,u0,weight))
+    norm = xp.sqrt(normval/overlap(u0,u0,weight))
     u0 *= norm
     return u0
 
 def norm_nonu(u0,weights,normval = 1):
-    norm = np.sqrt(normval/overlap_nonu(u0,u0,weights))
+    norm = xp.sqrt(normval/overlap_nonu(u0,u0,weights))
     u0 *= norm
     return u0
 
@@ -91,24 +93,25 @@ def timeit(method):
 
 def gauss(xg,yg,theta,phi,sigu,sigv,k0,x0=0,y0=0.):
     '''tilted gaussian beam'''
-    u = np.cos(theta)*np.cos(phi)*(xg-x0) + np.cos(theta)*np.sin(phi)*(yg-y0)
-    v = -np.sin(phi)*(xg-x0) + np.cos(phi)*(yg-y0)
-    w = np.sin(theta)*np.cos(phi)*(xg-x0)  + np.sin(theta)*np.sin(phi)*(yg-y0)
-    out = ( np.exp(1.j*k0*w)*np.exp(-0.5*np.power(u/sigu,2.)-0.5*np.power(v/sigv,2.)) ).astype(np.complex128)
-    return out/np.sqrt(overlap(out,out))
+    u = xp.cos(theta)*xp.cos(phi)*(xg-x0) + xp.cos(theta)*xp.sin(phi)*(yg-y0)
+    v = -xp.sin(phi)*(xg-x0) + xp.cos(phi)*(yg-y0)
+    w = xp.sin(theta)*xp.cos(phi)*(xg-x0)  + xp.sin(theta)*xp.sin(phi)*(yg-y0)
+    out = ( xp.exp(1.j*k0*w)*xp.exp(-0.5*xp.power(u/sigu,2.)-0.5*xp.power(v/sigv,2.)) ).astype(xp.complex128)
+    return out/xp.sqrt(overlap(out,out))
 
 def read_rsoft(fname):
-    arr = np.loadtxt(fname,skiprows = 4).T
+    arr = _np.loadtxt(fname,skiprows = 4).T
     reals = arr[::2]
     imags = arr[1::2]
     field = (reals+1.j*imags).T
-    return field.astype(np.complex128)
+    return field.astype(_np.complex128)
 
 def write_rsoft(fname,u0,xw,yw):
     '''save field to a file format useable by rsoft'''
-    out = np.empty((u0.shape[0]*2,u0.shape[1]))
-    reals = np.real(u0)
-    imags = np.imag(u0)
+    u0 = to_cpu(u0)
+    out = _np.empty((u0.shape[0]*2,u0.shape[1]))
+    reals = _np.real(u0)
+    imags = _np.imag(u0)
 
     for j in range(out.shape[0]):
         if j%2==0:
@@ -117,4 +120,4 @@ def write_rsoft(fname,u0,xw,yw):
             out[j] = imags[:,int(j/2)]
     
     header = "/rn,a,b/nx0/ls1\n/r,qa,qb\n{} {} {} 0 OUTPUT_REAL_IMAG_3D\n{} {} {}".format(u0.shape[0],-xw/2,xw/2,u0.shape[1],-yw/2,yw/2)
-    np.savetxt(fname+".dat", out.T, header = header, fmt = "%f",comments="",newline="\n")
+    _np.savetxt(fname+".dat", out.T, header = header, fmt = "%f",comments="",newline="\n")

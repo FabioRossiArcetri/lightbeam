@@ -2,6 +2,7 @@ import numpy as np
 from scipy.special import jn_zeros, jn, kn,jv,kv
 from scipy.optimize import brentq
 from numpy.lib import scimath
+from lightbeam.xp import to_cpu, to_device
 
 def get_NA(ncore,nclad):
     return np.sqrt(ncore*ncore - nclad*nclad)
@@ -128,6 +129,10 @@ def lpfield(xg,yg,l,m,a,wl0,ncore,nclad,which = "cos"):
 
     assert which in ("cos","sin"), "lp mode azimuthal component is either a cosine or sine, choose either 'cos' or 'sin'"
 
+    # Move to CPU for scipy/numpy computation
+    xg = to_cpu(xg)
+    yg = to_cpu(yg)
+
     V = get_V(2*np.pi/wl0,a,ncore,nclad)
     rs = np.sqrt(np.power(xg,2) + np.power(yg,2))
     b = get_b(l,m,V)
@@ -152,7 +157,7 @@ def lpfield(xg,yg,l,m,a,wl0,ncore,nclad,which = "cos"):
     else:
         fieldout *= np.sin(l*phis)
 
-    return fieldout
+    return to_device(fieldout)
 
 def get_IOR(wl):
     """ for fused silica """
