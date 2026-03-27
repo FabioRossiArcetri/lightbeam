@@ -3,7 +3,6 @@ from numpy import s_
 from scipy.interpolate import RectBivariateSpline
 import matplotlib.pyplot as plt
 from itertools import chain
-from bisect import bisect_left
 import math
 from lightbeam.xp import xp, to_cpu
 
@@ -302,12 +301,10 @@ class RectMesh3D:
     def get_loc(self ):
 
         xy = self.xy
-        xa_list = to_cpu(self.xa).tolist()
-        ya_list = to_cpu(self.ya).tolist()
-        ix0 = bisect_left(xa_list,xy.xm-TOL)
-        ix1 = bisect_left(xa_list,xy.xM-TOL)
-        ix2 = bisect_left(ya_list,xy.ym-TOL)
-        ix3 = bisect_left(ya_list,xy.yM-TOL)
+        ix0 = int(xp.searchsorted(self.xa, xy.xm - TOL))
+        ix1 = int(xp.searchsorted(self.xa, xy.xM - TOL))
+        ix2 = int(xp.searchsorted(self.ya, xy.ym - TOL))
+        ix3 = int(xp.searchsorted(self.ya, xy.yM - TOL))
         return ix0,ix1,ix2,ix3
 
     def sigmax(self,x):

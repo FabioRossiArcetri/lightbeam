@@ -47,10 +47,12 @@ class OpticPrim:
         xa,ya = m.xa,m.ya
 
         xmin,xmax,ymin,ymax = self._bbox(z)
-        imin = max(bisect_left(to_cpu(xa).tolist(),xmin)-1,0)
-        imax = min(bisect_left(to_cpu(xa).tolist(),xmax)+1,len(xa))
-        jmin = max(bisect_left(to_cpu(ya).tolist(),ymin)-1,0)
-        jmax = min(bisect_left(to_cpu(ya).tolist(),ymax)+1,len(ya))
+        xa_list = to_cpu(xa).tolist()
+        ya_list = to_cpu(ya).tolist()
+        imin = max(bisect_left(xa_list,xmin)-1,0)
+        imax = min(bisect_left(xa_list,xmax)+1,len(xa))
+        jmin = max(bisect_left(ya_list,ymin)-1,0)
+        jmax = min(bisect_left(ya_list,ymax)+1,len(ya))
         return s_[imin:imax,jmin:jmax], s_[imin:imax+1,jmin:jmax+1]
     
     def set_sampling(self,xymesh:RectMesh2D):

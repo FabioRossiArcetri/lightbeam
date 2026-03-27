@@ -33,7 +33,7 @@ def tri_solve_vec(a, b, c, r, g, u):
     u       : (N, M) complex – solution (written in-place)
     """
     N = a.shape[0]
-    beta = b[0].copy()
+    beta = b[0]
     u[0] = r[0] / beta
     for j in range(1, N):
         g[j] = c[j-1] / beta

@@ -51,71 +51,71 @@ def _oneside(x, y0, y1, r):
     this path takes you clockwise the area will be negative.
     """
 
-    if bool(xp.all(x == 0)): return x
+    if xp.all(x == 0).item(): return x
 
     sx = x.shape
     ans = xp.zeros(sx, dtype=xp.float64)
     yh = xp.zeros(sx, dtype=xp.float64)
     to = (abs(x) >= r)
     ti = (abs(x) < r)
-    if bool(xp.any(to)):
+    if xp.any(to).item():
         ans[to] = _arc(x[to], y0[to], y1[to], r)
-    if not bool(xp.any(ti)):
+    if not xp.any(ti).item():
         return ans
 
     yh[ti] = xp.sqrt(r**2 - x[ti]**2)
 
     i = ((y0 <= -yh) & ti)
-    if bool(xp.any(i)):
+    if xp.any(i).item():
 
         j = ((y1 <= -yh) & i)
-        if bool(xp.any(j)):
+        if xp.any(j).item():
             ans[j] = _arc(x[j], y0[j], y1[j], r)
 
         j = ((y1 > -yh) & (y1 <= yh) & i)
-        if bool(xp.any(j)):
+        if xp.any(j).item():
             ans[j] = _arc(x[j], y0[j], -yh[j], r) + \
                      _chord(x[j], -yh[j], y1[j])
 
         j = ((y1 > yh) & i)
-        if bool(xp.any(j)):
+        if xp.any(j).item():
             ans[j] = _arc(x[j], y0[j], -yh[j], r) + \
                      _chord(x[j], -yh[j], yh[j]) + \
                      _arc(x[j], yh[j], y1[j], r)
 
     i = ((y0 > -yh) & (y0 < yh) & ti)
-    if bool(xp.any(i)):
+    if xp.any(i).item():
 
         j = ((y1 <= -yh) & i)
-        if bool(xp.any(j)):
+        if xp.any(j).item():
             ans[j] = _chord(x[j], y0[j], -yh[j]) + \
                      _arc(x[j], -yh[j], y1[j], r)
 
         j = ((y1 > -yh) & (y1 <= yh) & i)
-        if bool(xp.any(j)):
+        if xp.any(j).item():
             ans[j] = _chord(x[j], y0[j], y1[j])
 
         j = ((y1 > yh) & i)
-        if bool(xp.any(j)):
+        if xp.any(j).item():
             ans[j] = _chord(x[j], y0[j], yh[j]) + \
                      _arc(x[j], yh[j], y1[j], r)
         
     i = ((y0 >= yh) & ti)
-    if bool(xp.any(i)):
+    if xp.any(i).item():
 
         j = ((y1 <= -yh) & i)
-        if bool(xp.any(j)):
+        if xp.any(j).item():
             ans[j] = _arc(x[j], y0[j], yh[j], r) + \
                      _chord(x[j], yh[j], -yh[j]) + \
                      _arc(x[j], -yh[j], y1[j], r)
 
         j = ((y1 > -yh) & (y1 <= yh) & i)
-        if bool(xp.any(j)):
+        if xp.any(j).item():
             ans[j] = _arc(x[j], y0[j], yh[j], r) + \
                      _chord(x[j], yh[j], y1[j])
 
         j = ((y1 > yh) & i)
-        if bool(xp.any(j)):
+        if xp.any(j).item():
             ans[j] = _arc(x[j], y0[j], y1[j], r)
         
     return ans
