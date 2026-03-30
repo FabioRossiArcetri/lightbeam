@@ -107,7 +107,7 @@ def main():
     print(f"  Output power : {p_uni:.4f}")
     print()
 
-    speedup = t_adapt / t_uni if t_uni > 0 else float("inf")
+    speedup = t_adapt / t_uni if t_uni > 1e-9 else float("inf")
     print(f"Speed-up (adaptive / uniform) : {speedup:.2f}×")
     print()
 

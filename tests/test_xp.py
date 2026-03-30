@@ -15,7 +15,7 @@ def test_is_gpu_false_by_default():
     if os.environ.get("LIGHTBEAM_BACKEND", "").lower() == "cupy":
         pytest.skip("CuPy backend is active")
     from lightbeam.xp import is_gpu
-    assert is_gpu() == False
+    assert not is_gpu()
 
 
 def test_to_cpu_passthrough():
