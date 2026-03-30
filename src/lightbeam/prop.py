@@ -1,6 +1,7 @@
 
 import numpy as _np
 from numpy import pi, s_
+from typing import Union
 from lightbeam.xp import xp, to_cpu, to_device
 from lightbeam.mesh import RectMesh3D, RectMesh2D, UniformMesh3D, UniformMesh2D
 import lightbeam.optics as optics
@@ -45,7 +46,7 @@ def tri_solve_vec(a, b, c, r, g, u):
 
 class Prop3D:
     '''beam propagator. employs finite-differences beam propagation with PML as the boundary condition. works on an adaptive mesh'''
-    def __init__(self, wl0, _mesh, optical_system:optics.OpticSys, n0):
+    def __init__(self, wl0, _mesh: Union[RectMesh3D, UniformMesh3D], optical_system:optics.OpticSys, n0):
         
         xymesh = _mesh.xy
 
