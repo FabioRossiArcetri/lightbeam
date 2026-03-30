@@ -315,3 +315,31 @@ class RectMesh3D:
         '''dimensionless, divided by e0 omega'''
         return xp.where(xp.abs(y)>self.xy.yw/2.,xp.power((xp.abs(y) - self.xy.yw/2)/(self.PML*self.xy.dy0),2.)*self.sigma_max,0.+0.j)
 
+
+class UniformMesh2D(RectMesh2D):
+    """Uniform (non-adaptive) version of RectMesh2D. AMR calls are no-ops."""
+
+    def __init__(self, xw, yw, dx, dy, Nbc=4):
+        super().__init__(xw, yw, dx, dy, Nbc)
+        self.max_iters = 0
+
+    def get_base_field(self, u):
+        return u
+
+    def refine_base(self, u, ucrit):
+        pass
+
+    def refine_by_two(self, u, crit_val):
+        return u
+
+
+class UniformMesh3D(RectMesh3D):
+    """Uniform (non-adaptive) version of RectMesh3D. Uses UniformMesh2D as xy sub-mesh."""
+
+    def __init__(self, xw, yw, zw, ds, dz, PML=4, xwfunc=None, ywfunc=None):
+        super().__init__(xw, yw, zw, ds, dz, PML, xwfunc, ywfunc)
+        # Replace the RectMesh2D xy sub-mesh with a UniformMesh2D
+        xy_xw = self.xy.xw
+        xy_yw = self.xy.yw
+        self.xy = UniformMesh2D(xy_xw, xy_yw, ds, ds, PML)
+
