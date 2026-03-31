@@ -263,6 +263,131 @@ class RectMesh2D:
         for i in range(self.max_iters):
             u0 = self.refine_by_two(u0,ucrit)
 
+class UniformMesh2D:
+    """
+    Strictly uniform transverse mesh for FD-BPM.
+
+    Unlike RectMesh2D, the grid spacing is constant throughout and no adaptive
+    refinement is ever performed.  This enables significant simplifications in
+    the tridiagonal coefficient assembly: all grid-correction factors collapse
+    to the uniform-grid values R1 = R3 = 1/12, R2 = 5/6, and the propagation
+    loop in Prop3D detects this class and uses the faster uniform code path.
+    """
+
+    def __init__(self, xw, yw, dx, dy, Nbc=4):
+        self.max_iters = 0  # no refinement iterations
+        self.Nbc = Nbc
+        self.dx0, self.dy0 = dx, dy
+
+        self.xa = None
+        self.ya = None
+        self.xa_last = None
+        self.ya_last = None
+
+        self.ccel_ix = s_[Nbc+2:-Nbc-2]
+        self.cvert_ix = s_[Nbc:-Nbc]
+        self.pvert_ix = xp.hstack((xp.arange(Nbc+1), xp.arange(-Nbc-1, 0)))
+
+        self.reinit(xw, yw)
+
+    def reinit(self, xw, yw):
+        dx, dy = self.dx0, self.dy0
+        Nbc = self.Nbc
+
+        self.shape0_comp = (int(round(xw/dx)+1), int(round(yw/dy)+1))
+        xres, yres = self.shape0_comp[0] + 2*Nbc, self.shape0_comp[1] + 2*Nbc
+
+        self.shape0 = (xres, yres)
+        self.shape  = (xres, yres)
+        self.xw, self.yw = xw, yw
+
+        self.xm = -xw/2 - Nbc*dx
+        self.ym = -yw/2 - Nbc*dy
+        self.xM =  xw/2 + Nbc*dx
+        self.yM =  yw/2 + Nbc*dy
+
+        self.xa = xp.linspace(self.xm, self.xM, xres)
+        self.ya = xp.linspace(self.ym, self.yM, yres)
+
+        # uniform spacing — every cell has the same width
+        self.dxa = xp.full(xres, dx)
+        self.dya = xp.full(yres, dy)
+
+        # all step ratios are exactly 1 (no non-uniformity)
+        self.rxa = xp.ones(xres)
+        self.rya = xp.ones(yres)
+
+        self.xres, self.yres = xres, yres
+
+        # identity index maps (no coarsening ever happens)
+        self.xix_base = xp.arange(xres)
+        self.yix_base = xp.arange(yres)
+
+        self.pvert_xa = self.xa[self.pvert_ix]
+        self.pvert_ya = self.ya[self.pvert_ix]
+
+        self.xg, self.yg = xp.meshgrid(self.xa, self.ya, indexing='ij')
+
+        # half-cell offset grids (used by get_weights and Prop3D)
+        xhg = xp.empty((xres + 1, yres))
+        yhg = xp.empty((xres, yres + 1))
+
+        xhg[1:-1] = (self.xg[1:] + self.xg[:-1]) * 0.5
+        yhg[:, 1:-1] = (self.yg[:, 1:] + self.yg[:, :-1]) * 0.5
+
+        xhg[0] = self.xg[0] - dx * 0.5
+        xhg[-1] = self.xg[-1] + dx * 0.5
+
+        yhg[:, 0] = self.yg[:, 0] - dy * 0.5
+        yhg[:, -1] = self.yg[:, -1] + dy * 0.5
+
+        self.xhg, self.yhg = xhg, yhg
+
+    def snapto(self, xw, yw):
+        xwr = 2 * math.ceil(xw / 2 / self.dx0)
+        ywr = 2 * math.ceil(yw / 2 / self.dy0)
+        return xwr * self.dx0, ywr * self.dy0
+
+    def get_weights(self):
+        """Return cell-area weights. For a uniform grid this is a constant array."""
+        return xp.full((self.xres, self.yres), self.dx0 * self.dy0)
+
+    def resample(self, u, xa=None, ya=None, newxa=None, newya=None):
+        if xa is None or ya is None:
+            out = RectBivariateSpline(
+                to_cpu(self.xa_last), to_cpu(self.ya_last), to_cpu(u)
+            )(to_cpu(self.xa), to_cpu(self.ya))
+        else:
+            out = RectBivariateSpline(
+                to_cpu(xa), to_cpu(ya), to_cpu(u)
+            )(to_cpu(newxa), to_cpu(newya))
+        return xp.asarray(out)
+
+    def resample_complex(self, u, xa=None, ya=None, newxa=None, newya=None):
+        reals = self.resample(xp.real(u), xa, ya, newxa, newya)
+        imags = self.resample(xp.imag(u), xa, ya, newxa, newya)
+        return reals + 1.j * imags
+
+    def plot_mesh(self, reduce_by=1, show=True):
+        i = 0
+        for x in self.xa:
+            if i % reduce_by == 0:
+                plt.axhline(y=x, color='k', lw=0.5, alpha=0.5)
+            i += 1
+        i = 0
+        for y in self.ya:
+            if i % reduce_by == 0:
+                plt.axvline(x=y, color='k', lw=0.5, alpha=0.5)
+            i += 1
+        if show:
+            plt.axis('equal')
+            plt.show()
+
+    def get_base_field(self, u):
+        """Identity — no coarsening for uniform mesh."""
+        return u
+
+
 class RectMesh3D:
     def __init__(self,xw,yw,zw,ds,dz,PML=4,xwfunc=None,ywfunc=None):
         '''base is a uniform mesh. can be refined'''
