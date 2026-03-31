@@ -2,7 +2,7 @@
 import numpy as _np
 from numpy import pi, s_
 from lightbeam.xp import xp, to_cpu, to_device
-from lightbeam.mesh import RectMesh3D,RectMesh2D
+from lightbeam.mesh import RectMesh3D, RectMesh2D, UniformMesh3D
 import lightbeam.optics as optics
 from lightbeam.misc import timeit, overlap, normalize,printProgressBar, overlap_nonu, norm_nonu
 
@@ -53,6 +53,7 @@ class Prop3D:
         self.k0 = k0 = 2.*pi/wl0
         self.k02 = k02 = k0*k0
         self._mesh = _mesh
+        self._is_uniform = isinstance(_mesh, UniformMesh3D)
         self.n0 = n0
 
         self.sig = sig = -2.j*k0*n0/_mesh.dz
