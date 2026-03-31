@@ -441,71 +441,30 @@ class RectMesh3D:
         return xp.where(xp.abs(y)>self.xy.yw/2.,xp.power((xp.abs(y) - self.xy.yw/2)/(self.PML*self.xy.dy0),2.)*self.sigma_max,0.+0.j)
 
 
-class UniformMesh3D:
-    """
-    3-D container mesh for FD-BPM that wraps a :class:`UniformMesh2D` transverse
-    mesh.  Analogous to :class:`RectMesh3D` but the transverse grid is strictly
-    uniform — no adaptive refinement is ever applied.  Prop3D detects this class
-    and automatically selects the faster uniform propagation code path.
-    """
+class UniformMesh2D(RectMesh2D):
+    """Uniform (non-adaptive) version of RectMesh2D. AMR calls are no-ops."""
+
+    def __init__(self, xw, yw, dx, dy, Nbc=4):
+        super().__init__(xw, yw, dx, dy, Nbc)
+        self.max_iters = 0
+
+    def get_base_field(self, u):
+        return u
+
+    def refine_base(self, u, ucrit):
+        pass
+
+    def refine_by_two(self, u, crit_val):
+        return u
+
+
+class UniformMesh3D(RectMesh3D):
+    """Uniform (non-adaptive) version of RectMesh3D. Uses UniformMesh2D as xy sub-mesh."""
 
     def __init__(self, xw, yw, zw, ds, dz, PML=4, xwfunc=None, ywfunc=None):
-        self.xw, self.yw, self.zw = xw, yw, zw
-        self.ds, self.dz = ds, dz
-        self.xres, self.yres, self.zres = (
-            round(xw/ds)+1+2*PML,
-            round(yw/ds)+1+2*PML,
-            round(zw/dz)+1,
-        )
-
-        self.xa = xp.linspace(-xw/2 - PML*ds, xw/2 + PML*ds, self.xres)
-        self.ya = xp.linspace(-yw/2 - PML*ds, yw/2 + PML*ds, self.yres)
-
-        self.xg, self.yg = xp.meshgrid(self.xa, self.ya, indexing='ij')
-
-        self.shape = (self.zres, self.xres, self.yres)
-
-        if xwfunc is None:
-            xy_xw = xw
-        else:
-            xy_xw = 2 * math.ceil(xwfunc(0) / 2 / ds) * ds
-
-        if ywfunc is None:
-            xy_yw = yw
-        else:
-            xy_yw = 2 * math.ceil(ywfunc(0) / 2 / ds) * ds
-
+        super().__init__(xw, yw, zw, ds, dz, PML, xwfunc, ywfunc)
+        # Replace the RectMesh2D xy sub-mesh with a UniformMesh2D
+        xy_xw = self.xy.xw
+        xy_yw = self.xy.yw
         self.xy = UniformMesh2D(xy_xw, xy_yw, ds, ds, PML)
 
-        self.za = xp.linspace(0, zw, self.zres)
-
-        self.sigma_max = 5. + 0.j  # max (dimensionless) conductivity in PML layers
-        self.PML = PML
-        self.half_dz = dz / 2.
-
-        self.xwfunc = xwfunc
-        self.ywfunc = ywfunc
-
-    def get_loc(self):
-        xy = self.xy
-        ix0 = int(xp.searchsorted(self.xa, xy.xm - TOL))
-        ix1 = int(xp.searchsorted(self.xa, xy.xM - TOL))
-        ix2 = int(xp.searchsorted(self.ya, xy.ym - TOL))
-        ix3 = int(xp.searchsorted(self.ya, xy.yM - TOL))
-        return ix0, ix1, ix2, ix3
-
-    def sigmax(self, x):
-        '''dimensionless, divided by e0 omega'''
-        return xp.where(
-            xp.abs(x) > self.xy.xw / 2.,
-            xp.power((xp.abs(x) - self.xy.xw / 2.) / (self.PML * self.xy.dx0), 2.) * self.sigma_max,
-            0. + 0.j,
-        )
-
-    def sigmay(self, y):
-        '''dimensionless, divided by e0 omega'''
-        return xp.where(
-            xp.abs(y) > self.xy.yw / 2.,
-            xp.power((xp.abs(y) - self.xy.yw / 2.) / (self.PML * self.xy.dy0), 2.) * self.sigma_max,
-            0. + 0.j,
-        )

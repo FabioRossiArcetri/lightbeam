@@ -54,6 +54,7 @@ class Prop3D:
         self.k0 = k0 = 2.*pi/wl0
         self.k02 = k02 = k0*k0
         self._mesh = _mesh
+        self._is_uniform = isinstance(_mesh, UniformMesh3D)
         self.n0 = n0
 
         self.sig = sig = -2.j*k0*n0/_mesh.dz
