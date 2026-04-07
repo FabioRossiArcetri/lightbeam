@@ -107,8 +107,10 @@ class RectMesh2D:
         self.xix_base = xix_base[self.xix_base]
         self.yix_base = yix_base[self.yix_base]
 
-        new_dxa = xp.repeat(self.dxa[1:]/rfacxa,rfacxa)
-        new_dya = xp.repeat(self.dya[1:]/rfacya,rfacya)
+        _rfacxa_cpu = to_cpu(rfacxa)
+        _rfacya_cpu = to_cpu(rfacya)
+        new_dxa = xp.repeat(self.dxa[1:]/rfacxa,_rfacxa_cpu)
+        new_dya = xp.repeat(self.dya[1:]/rfacya,_rfacya_cpu)
 
         new_xa = self.dxa2xa(new_dxa)
         new_ya = self.dxa2xa(new_dya)
